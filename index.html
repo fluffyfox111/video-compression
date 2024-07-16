@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compresseur de Vidéo</title>
+    <style>
+        #progressBar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            margin-top: 10px;
+        }
+        #progress {
+            width: 0%;
+            height: 30px;
+            background-color: #4caf50;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+        }
+        .video-container {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .video-item {
+            width: 45%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Compresseur de Vidéo</h1>
+
+    <!-- Note sur la limite de taille de fichier -->
+    <p>La taille maximale du fichier vidéo à importer est limitée par les spécifications du navigateur.</p>
+
+    <input type="file" id="videoInput" accept="video/*">
+    
+    <!-- Ajout du menu déroulant pour choisir la taille cible -->
+    <label for="targetSize">Choisir la taille cible :</label>
+    <select id="targetSize">
+        <option value="8">8 MB</option>
+        <option value="12">12 MB</option>
+        <option value="16">16 MB</option>
+        <option value="custom">Personnalisé</option>
+    </select>
+    <div id="customSize" style="display: none;">
+        <label for="customSizeInput">Taille personnalisée (MB) :</label>
+        <input type="number" id="customSizeInput" min="1">
+    </div>
+
+    <!-- Bouton pour compresser la vidéo -->
+    <button id="compressBtn">Compresser la Vidéo</button>
+
+    <!-- Barre de progression -->
+    <div id="progressBar">
+        <div id="progress">0%</div>
+    </div>
+
+    <!-- Conteneur pour afficher les vidéos -->
+    <div class="video-container">
+        <div class="video-item">
+            <h2>Vidéo Importée</h2>
+            <video id="inputVideo" controls></video>
+        </div>
+        <div class="video-item">
+            <h2>Vidéo Compressée</h2>
+            <video id="outputVideo" controls></video>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.9.0/ffmpeg.min.js"></script>
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({ log: true });
+
+        const updateProgress = (ratio) => {
+            const progressElement = document.getElementById('progress');
+            const percentage = Math.round(ratio * 100);
+            progressElement.style.width = percentage + '%';
+            progressElement.innerText = percentage + '%';
+        };
+
+        // Fonction pour afficher une vidéo dans un élément vidéo
+        const displayVideo = (videoElement, blob) => {
+            videoElement.src = URL.createObjectURL(blob);
+            videoElement.load();
+            videoElement.play();
+        };
+
+        // Événement déclenché lors du clic sur le bouton "Compresser la Vidéo"
+        document.getElementById('compressBtn').addEventListener('click', async () => {
+            const videoInput = document.getElementById('videoInput').files[0];
+            if (!videoInput) {
+                alert('Veuillez sélectionner un fichier vidéo.');
+                return;
+            }
+
+            // Récupérer la taille cible sélectionnée
+            const targetSizeSelect = document.getElementById('targetSize');
+            const selectedSize = targetSizeSelect.value;
+
+            // Vérifier si la taille personnalisée est sélectionnée
+            let fileSizeLimit = 8 * 1024 * 1024; // 8 MB par défaut
+            if (selectedSize === 'custom') {
+                const customSizeInput = document.getElementById('customSizeInput').value;
+                if (!customSizeInput) {
+                    alert('Veuillez entrer une taille personnalisée.');
+                    return;
+                }
+                fileSizeLimit = customSizeInput * 1024 * 1024;
+            } else {
+                fileSizeLimit = selectedSize * 1024 * 1024;
+            }
+
+            document.getElementById('progress').style.width = '0%';
+            document.getElementById('progress').innerText = '0%';
+
+            await ffmpeg.load();
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(videoInput));
+
+            ffmpeg.setProgress(({ ratio }) => {
+                updateProgress(ratio);
+            });
+
+            // Commande de compression avec la taille cible
+            await ffmpeg.run('-i', 'input.mp4', '-vcodec', 'libx264', '-b:v', '1M', '-maxrate', '1M', '-bufsize', '2M', '-crf', '28', '-fs', `${fileSizeLimit}`, 'output.mp4');
+
+            const inputData = ffmpeg.FS('readFile', 'input.mp4');
+            const inputVideoBlob = new Blob([inputData.buffer], { type: 'video/mp4' });
+
+            const outputData = ffmpeg.FS('readFile', 'output.mp4');
+            const outputVideoBlob = new Blob([outputData.buffer], { type: 'video/mp4' });
+
+            // Afficher les vidéos dans les éléments vidéo correspondants
+            displayVideo(document.getElementById('inputVideo'), inputVideoBlob);
+            displayVideo(document.getElementById('outputVideo'), outputVideoBlob);
+
+            // Afficher un message spécial si 8 MB est sélectionné
+            if (selectedSize === '8') {
+                alert('Pas de nitro?');
+            }
+        });
+
+        // Gérer l'affichage du champ de taille personnalisée
+        document.getElementById('targetSize').addEventListener('change', () => {
+            const customSizeDiv = document.getElementById('customSize');
+            const targetSizeSelect = document.getElementById('targetSize');
+            if (targetSizeSelect.value === 'custom') {
+                customSizeDiv.style.display = 'block';
+            } else {
+                customSizeDiv.style.display = 'none';
+            }
+        });
+
+        // Mise à jour de la vidéo importée lorsque l'utilisateur sélectionne un fichier
+        document.getElementById('videoInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const videoElement = document.getElementById('inputVideo');
+                videoElement.src = URL.createObjectURL(file);
+                videoElement.load();
+                videoElement.play();
+            }
+        });
+    </script>
+</body>
+</html>
